@@ -3,43 +3,54 @@ from PIL import Image, ImageOps
 from typing import List, Tuple
 from collections import deque
 
+
+print("finish import")
+
 a = ImageOps.invert(Image.open("test.bmp").convert("1"))
 
 data = np.array(a)
 
 # split white place
-one_fill = data.copy()
-inner_starts: List[Tuple[int, int]] = []
-while True:
-    it = np.nditer(one_fill, flags=["multi_index"])
-    inner_place = None
-    while not it.finished:
-        pos = it.multi_index
-        if it.value == 1:
-            inner_place = pos
-            break
-        it.iternext()
-    if inner_place == None:
-        break
-    inner_starts.append(inner_place)
+covered = np.zeros_like(data)
 
-    one_fill[*inner_place] = 0
+candidate: List[Tuple[int]] = []
 
-    queue: deque[Tuple[int, int]] = deque([inner_place])
-    while len(queue) > 0:
-        target = queue.popleft()
+queue: deque[Tuple[int, int]] = deque([(0, 0)])
+assert data[0, 0] == 0
+
+while len(queue) > 0:
+    target = queue.popleft()
+    if covered[*target] == 1:
+        continue
+    current_color = data[*target]
+    candidate.append(target)
+
+    queue_erode: deque[Tuple[int, int]] = deque([target])
+    while len(queue_erode) > 0:
+        target_erode = queue_erode.popleft()
 
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            next = (target[0] + dx, target[1] + dy)
-            if (0 <= next[0] < one_fill.shape[0]
-                    and 0 <= next[1] < one_fill.shape[1]
-                    and one_fill[*next] == 1):
-                queue.append(next)
-                one_fill[*next] = 0
+            next = (target_erode[0] + dx, target_erode[1] + dy)
+            if (0 <= next[0] < data.shape[0]
+                    and 0 <= next[1] < data.shape[1]
+                    and covered[*next] == 0
+                ):
+                if data[*next] == current_color:
+                    covered[*next] = 1
+                    queue_erode.append(next)
+                else:
+                    queue.append(next)
+    pass
 
-assert (one_fill == 0).all()
 
-print(inner_starts)
+assert (covered == 1).all()
 
-b = Image.fromarray(data)
+print(candidate)
+
+b = Image.fromarray(data).convert("RGB")
+ba = np.array(b)
+for p in candidate:
+    ba[*p]  = (255, 0, 0)
+b = Image.fromarray(ba)
 b.show()
+# b.save("result.png")
