@@ -44,10 +44,10 @@ def collect_reparse_point(data) -> Node[ReparsePoint]:
     first_checkpoint = []
     for x in range(data.shape[0]):
         first_checkpoint.append((x, 0))
-        first_checkpoint.append((x, data.shape[0] - 1))
+        first_checkpoint.append((x, data.shape[1] - 1))
     for y in range(1, data.shape[1] - 1):
         first_checkpoint.append((0, y))
-        first_checkpoint.append((data.shape[1] - 1, y))
+        first_checkpoint.append((data.shape[0] - 1, y))
     for c in first_checkpoint:
         queue.append((tree, c))
 
