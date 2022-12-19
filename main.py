@@ -55,6 +55,7 @@ def collect_reparse_point(data) -> Node[ReparsePoint]:
         parent_node, target = queue.popleft()
         if covered[*target] == 1:
             continue
+        covered[*target] = 1
         current_color = data[*target]
 
         next_node = Node(ReparsePoint(*target, current_color))
