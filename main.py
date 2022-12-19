@@ -68,9 +68,9 @@ def collect_reparse_point(data) -> Node[ReparsePoint]:
             for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 next = (target_erode[0] + dx, target_erode[1] + dy)
                 if (0 <= next[0] < data.shape[0]
-                        and 0 <= next[1] < data.shape[1]
-                        and covered[*next] == 0
-                        ):
+                    and 0 <= next[1] < data.shape[1]
+                    and covered[*next] == 0
+                    ):
                     if (data[*next] == current_color).all():
                         covered[*next] = 1
                         queue_erode.append(next)
@@ -153,7 +153,7 @@ to_paths_patterns = {
 }
 
 
-def island_to_paths(data, start: Tuple[int, int], target_color):
+def island_to_paths(data, start: Tuple[int, int], target_color) -> IslandPathData:
     start_coord_under_pixel: Tuple[int, int] = None
     start_dir = None
     for (dx, dy), (cupx, cupy), next_dir in [
@@ -201,6 +201,56 @@ def island_to_paths(data, start: Tuple[int, int], target_color):
 
         path.append(next_move)
     return IslandPathData(*start_coord_under_pixel, path)
+
+
+class IslandEdge:
+    def __init__(self, _start_x: int, _start_y: int, _end_x: int, _end_y: int, _length: int, _dir: PathDir) -> None:
+        self.start_x = _start_x
+        self.start_y = _start_y
+        self.end_x = _end_x
+        self.end_y = _end_y
+        self.length = _length
+        self.dir = _dir
+
+
+def normalize_island_path_to_vector(path: IslandPathData):
+    new_path: List[IslandEdge] = []
+
+    continueing_length = 1
+    cx = path.start_x
+    cy = path.start_y
+    for i in range(1, len(path.path) + 1):
+        before = i - 1
+        if i >= len(path.path) or path.path[before] != path.path[i]:
+            dx, dy = path_dir_to_coord_diff[path.path[before]]
+            cex = cx + dx * continueing_length
+            cey = cy + dy * continueing_length
+
+            new_path.append(
+                IslandEdge(
+                    cx, cy,
+                    cex, cey,
+                    continueing_length,
+                    path.path[before]
+                )
+            )
+
+            cx = cex
+            cy = cey
+            continueing_length = 1
+        else:
+            continueing_length += 1
+    if len(new_path) >= 3:
+        if new_path[0].dir == new_path[-1].dir:
+            # Closed?
+            assert new_path[-1].end_x == new_path[0].start_x
+            assert new_path[-1].end_y == new_path[0].start_y
+
+            new_path[0].start_x = new_path[-1].start_x
+            new_path[0].start_y = new_path[-1].start_y
+            new_path[0].length += new_path[-1].length
+            del new_path[-1]
+    return new_path
 
 
 # DO NOT FORGET THAT PIL USES X DOWN AXIS
@@ -271,10 +321,17 @@ def main3():
 
     for l, rp in candidate:
         path = island_to_paths(data, (rp.x, rp.y), rp.value)
-        color_hex = "#" + "".join(f"{n:02X}" for n in [rp.value[0],rp.value[1],rp.value[2]]) + f" ({rp.value[3]/255.0*100:.1f}%)"
-        pc = "".join([{PathDir.Up: "↑", PathDir.Down: "↓",
-                     PathDir.Left: "←", PathDir.Right: "→"}[p] for p in path.path])
-        print(f"Depth: {l}, Start: ({path.start_x}, {path.start_y}), Color: {color_hex}\n{pc}\n")
+        color_hex = "#" + "".join(f"{n:02X}" for n in [
+                                  rp.value[0], rp.value[1], rp.value[2]]) + f" ({rp.value[3]/255.0*100:.1f}%)"
+
+        npd = normalize_island_path_to_vector(path)
+        pc = ""
+        for v in npd:
+            pn = {PathDir.Up: "↑", PathDir.Down: "↓",
+                  PathDir.Left: "←", PathDir.Right: "→"}[v.dir]
+            pc += f"({v.start_x}, {v.start_y}){pn}{v.length}({v.end_x}, {v.end_y}) "
+        print(
+            f"Depth: {l}, Start: ({path.start_x}, {path.start_y}), Color: {color_hex}\n{pc}\n")
 
 
 if __name__ == "__main__":
