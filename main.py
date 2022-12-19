@@ -10,9 +10,9 @@ Node_T = TypeVar("Node_T")
 
 class Node(Generic[Node_T]):
     def __init__(self, _value: Node_T) -> None:
-        self.parent = None
-        self.children = []
-        self.value = _value
+        self.parent: Node[Node_T] = None
+        self.children: List[Node_T] = []
+        self.value: Node_T = _value
 
     def append_child(self, n: Self):
         self.children.append(n)
@@ -34,7 +34,7 @@ def is_in_range(data, coord) -> bool:
     return True
 
 
-def collect_reparse_point(data) -> Node:
+def collect_reparse_point(data) -> Node[ReparsePoint]:
     covered = np.zeros((data.shape[0], data.shape[1]))
 
     tree: Node = Node(None)
@@ -202,9 +202,18 @@ def island_to_paths(data, start: Tuple[int, int], target_color):
     return IslandPathData(*start_coord_under_pixel, path)
 
 
+# DO NOT FORGET THAT PIL USES X DOWN AXIS
+def left_x_down_y_to_pil_axis(data):
+    return np.transpose(data, (1, 0, 2))
+
+
+def pil_axis_to_left_x_down_y(data):
+    return np.transpose(data, (1, 0, 2))
+
+
 def main1():
     a = Image.open("test_color.png")
-    data = np.array(a)
+    data = np.array(pil_axis_to_left_x_down_y(a))
 
     reparsed = collect_reparse_point(data)
 
@@ -218,11 +227,10 @@ def main1():
             candidate.append((level, (nc.value.x, nc.value.y)))
             queue.append(nc)
 
-    b = Image.fromarray(data)
-    ba = np.array(b)
+    ba = np.array(data)
     for l, p in candidate:
         ba[*p] = (255, 255 / l, 0, 255)
-    b = Image.fromarray(ba)
+    b = Image.fromarray(left_x_down_y_to_pil_axis(ba))
     b.show()
     # b.save("result.png")
 
@@ -244,6 +252,30 @@ def main2():
     # b.save("result2.png")
 
 
+def main3():
+    a = Image.open("test_color.png")
+    data = pil_axis_to_left_x_down_y(np.array(a))
+
+    reparsed = collect_reparse_point(data)
+
+    candidate: List[Tuple[int, ReparsePoint]] = []
+    queue = deque([reparsed])
+    level = 0
+    while len(queue) > 0:
+        level += 1
+        c = queue.popleft()
+        for nc in c.children:
+            candidate.append((level, nc.value))
+            queue.append(nc)
+
+    for l, rp in candidate:
+        path = island_to_paths(data, (rp.x, rp.y), rp.value)
+        color_hex = "#" + "".join(f"{n:02X}" for n in [rp.value[0],rp.value[1],rp.value[2]]) + f" ({rp.value[3]/255.0*100:.1f}%)"
+        pc = "".join([{PathDir.Up: "↑", PathDir.Down: "↓",
+                     PathDir.Left: "←", PathDir.Right: "→"}[p] for p in path.path])
+        print(f"Depth: {l}, Start: ({path.start_x}, {path.start_y}), Color: {color_hex}\n{pc}\n")
+
+
 if __name__ == "__main__":
     print("start main")
-    main2()
+    main3()
