@@ -213,7 +213,7 @@ class IslandEdge:
         self.dir = _dir
 
 
-def normalize_island_path_to_vector(path: IslandPathData):
+def normalize_island_path_to_edges(path: IslandPathData) -> List[IslandEdge]:
     new_path: List[IslandEdge] = []
 
     continueing_length = 1
@@ -324,12 +324,14 @@ def main3():
         color_hex = "#" + "".join(f"{n:02X}" for n in [
                                   rp.value[0], rp.value[1], rp.value[2]]) + f" ({rp.value[3]/255.0*100:.1f}%)"
 
-        npd = normalize_island_path_to_vector(path)
-        pc = ""
-        for v in npd:
-            pn = {PathDir.Up: "↑", PathDir.Down: "↓",
-                  PathDir.Left: "←", PathDir.Right: "→"}[v.dir]
-            pc += f"({v.start_x}, {v.start_y}){pn}{v.length}({v.end_x}, {v.end_y}) "
+        npd = normalize_island_path_to_edges(path)
+        pc = " ".join([
+            f"({v.start_x}, {v.start_y})"
+            + {PathDir.Up: "↑", PathDir.Down: "↓",
+               PathDir.Left: "←", PathDir.Right: "→"}[v.dir]
+            + f"{v.length}({v.end_x}, {v.end_y})"
+            for v in npd
+        ])
         print(
             f"Depth: {l}, Start: ({path.start_x}, {path.start_y}), Color: {color_hex}\n{pc}\n")
 
