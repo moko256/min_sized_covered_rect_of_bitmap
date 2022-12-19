@@ -157,10 +157,10 @@ def island_to_paths(data, start: Tuple[int, int], target_color):
     start_coord_under_pixel: Tuple[int, int] = None
     start_dir = None
     for (dx, dy), (cupx, cupy), next_dir in [
-        ((-1, 0), (0, 0), PathDir.Down),
-        ((1, 0),  (1, 1), PathDir.Up),
-        ((0, -1), (1, 0), PathDir.Left),
-        ((0, 1),  (0, 1), PathDir.Right),
+        ((-1, 0), (0, 1), PathDir.Up),
+        ((1, 0),  (1, 0), PathDir.Down),
+        ((0, -1), (0, 0), PathDir.Right),
+        ((0, 1),  (1, 1), PathDir.Left),
     ]:
         next = (start[0] + dx, start[1] + dy)
         if not (is_in_range(data, next) and (data[*next] == target_color).all()):
