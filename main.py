@@ -1,6 +1,7 @@
 import numpy as np
 from PIL import Image, ImageOps
-from typing import List, Self, Tuple, TypeVar, Generic
+from typing import List, Dict, Self, Tuple, TypeVar, Generic
+from enum import Enum, auto
 from collections import deque
 
 
@@ -23,6 +24,14 @@ class ReparsePoint:
         self.x = _x
         self.y = _y
         self.value = _value
+
+
+def is_in_range(data, coord) -> bool:
+    assert len(coord) <= len(data.shape)
+    for m, v in zip(data.shape, coord):
+        if not (0 <= v < m):
+            return False
+    return True
 
 
 def collect_reparse_point(data) -> Node:
@@ -58,8 +67,8 @@ def collect_reparse_point(data) -> Node:
             for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 next = (target_erode[0] + dx, target_erode[1] + dy)
                 if (0 <= next[0] < data.shape[0]
-                            and 0 <= next[1] < data.shape[1]
-                            and covered[*next] == 0
+                        and 0 <= next[1] < data.shape[1]
+                        and covered[*next] == 0
                         ):
                     if (data[*next] == current_color).all():
                         covered[*next] = 1
@@ -72,9 +81,128 @@ def collect_reparse_point(data) -> Node:
     return tree
 
 
-def main():
-    print("start main")
+class PathDir(Enum):
+    Up = auto()
+    Down = auto()
+    Left = auto()
+    Right = auto()
 
+
+class IslandPathData:
+    def __init__(self, _x: int, _y: int, _path: List[PathDir]) -> None:
+        self.start_x = _x
+        self.start_y = _y
+        self.path = _path
+
+
+path_dir_inverted = {
+    PathDir.Up: PathDir.Down,
+    PathDir.Down: PathDir.Up,
+    PathDir.Left: PathDir.Right,
+    PathDir.Right: PathDir.Left,
+}
+
+path_dir_to_coord_diff = {
+    PathDir.Up: (0, -1),
+    PathDir.Down: (0, 1),
+    PathDir.Left: (-1, 0),
+    PathDir.Right: (1, 0),
+}
+
+
+def to_bi_order(d: Dict[PathDir, PathDir]):
+    new_d = {
+        **d,
+        **{path_dir_inverted[v]: path_dir_inverted[k] for k, v in d.items()},
+    }
+    return new_d
+
+
+# Defines paterns
+#          key: Down   = where came from
+#             1  v  0
+# value: Left <- *     = where going
+#             0     0
+to_paths_patterns_color_invertable = {
+    (0, 0,
+     0, 0): {},
+    (1, 0,
+     0, 0): to_bi_order({PathDir.Down: PathDir.Left}),
+    (0, 1,
+     0, 0): to_bi_order({PathDir.Down: PathDir.Right}),
+    (0, 0,
+     1, 0): to_bi_order({PathDir.Up: PathDir.Left}),
+    (0, 0,
+     0, 1): to_bi_order({PathDir.Up: PathDir.Right}),
+    (1, 0,
+     1, 0): to_bi_order({PathDir.Down: PathDir.Down}),
+    (1, 1,
+     0, 0): to_bi_order({PathDir.Right: PathDir.Right}),
+}
+to_paths_patterns = {
+    **to_paths_patterns_color_invertable,
+    **{tuple([1-ik for ik in k]): v for k, v in to_paths_patterns_color_invertable.items()},
+
+    # Special patterns
+    # When we invert colors, we need invert I/O directions.
+    (1, 0,
+     0, 1): to_bi_order({PathDir.Down: PathDir.Left, PathDir.Up: PathDir.Right}),
+    (0, 1,
+     1, 0): to_bi_order({PathDir.Down: PathDir.Right, PathDir.Up: PathDir.Left}),
+}
+
+
+def island_to_paths(data, start: Tuple[int, int], target_color):
+    start_coord_under_pixel: Tuple[int, int] = None
+    start_dir = None
+    for (dx, dy), (cupx, cupy), next_dir in [
+        ((-1, 0), (0, 0), PathDir.Down),
+        ((1, 0),  (1, 1), PathDir.Up),
+        ((0, -1), (1, 0), PathDir.Left),
+        ((0, 1),  (0, 1), PathDir.Right),
+    ]:
+        next = (start[0] + dx, start[1] + dy)
+        if not (is_in_range(data, next) and (data[*next] == target_color).all()):
+            start_coord_under_pixel = (start[0] + cupx, start[1] + cupy)
+            start_dir = next_dir
+            break
+    assert start_coord_under_pixel != None  # Inside the wall!
+    assert start_dir != None
+
+    path: List[PathDir] = [start_dir]
+    current_coord_under_pixel: Tuple[int, int] = start_coord_under_pixel
+
+    def target_color_or_zero(data, now, offset, target_color):
+        nx, ny = now
+        ox, oy = offset
+        coord = (nx + ox, ny + oy)
+        if is_in_range(data, coord) and (data[coord] == target_color).all():
+            return 1
+        return 0
+
+    while True:
+        last_move = path[-1]
+        cx, cy = current_coord_under_pixel
+        ndx, ndy = path_dir_to_coord_diff[last_move]
+        nd = (cx + ndx, cy + ndy)
+        current_coord_under_pixel = nd
+
+        if current_coord_under_pixel == start_coord_under_pixel:
+            break
+
+        near_pixels = (
+            target_color_or_zero(data, nd, (-1, -1), target_color),
+            target_color_or_zero(data, nd, (0, -1), target_color),
+            target_color_or_zero(data, nd, (-1, 0), target_color),
+            target_color_or_zero(data, nd, (0, 0), target_color),
+        )
+        next_move = to_paths_patterns[near_pixels][last_move]
+
+        path.append(next_move)
+    return IslandPathData(*start_coord_under_pixel, path)
+
+
+def main1():
     a = Image.open("test_color.png")
     data = np.array(a)
 
@@ -98,5 +226,24 @@ def main():
     b.show()
     # b.save("result.png")
 
+
+def main2():
+    data = np.ones((3, 3, 3), dtype=np.uint8) * 255
+    data[0, 1] = (255, 0, 0)
+    data[1, 1] = (255, 0, 0)
+    data[1, 0] = (255, 0, 0)
+    data[2, 2] = (255, 0, 0)
+
+    ipd = island_to_paths(data, (1, 1), (255, 0, 0))
+    print(ipd.start_x)
+    print(ipd.start_y)
+    print(ipd.path)
+
+    b = Image.fromarray(data, mode="RGB")
+    # b.show()
+    # b.save("result2.png")
+
+
 if __name__ == "__main__":
-    main()
+    print("start main")
+    main2()
