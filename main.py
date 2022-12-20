@@ -68,9 +68,9 @@ def collect_reparse_point(data) -> Node[ReparsePoint]:
             for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 next = (target_erode[0] + dx, target_erode[1] + dy)
                 if (0 <= next[0] < data.shape[0]
-                    and 0 <= next[1] < data.shape[1]
-                    and covered[*next] == 0
-                    ):
+                            and 0 <= next[1] < data.shape[1]
+                            and covered[*next] == 0
+                        ):
                     if (data[*next] == current_color).all():
                         covered[*next] = 1
                         queue_erode.append(next)
@@ -253,6 +253,166 @@ def normalize_island_path_to_edges(path: IslandPathData) -> List[IslandEdge]:
     return new_path
 
 
+class Rect:
+    def __init__(self, _x: int, _y: int, _w: int, _h: int, _color) -> None:
+        self.x = _x
+        self.y = _y
+        self.w = _w
+        self.h = _h
+        self.color = _color
+
+
+def split_into_rect(edges: List[IslandEdge], color) -> List[Rect]:
+    # 'Non-degeneracy' island only.
+    y_list: List[int] = []
+    for i, e in enumerate(edges):
+        if e.dir in [PathDir.Left, PathDir.Right]:
+            assert e.start_y == e.end_y
+            y_list.append(i)
+    y_list.sort(key=lambda i: edges[i].end_y)
+
+    x_list: List[int] = []
+    x_list_top_y: Dict[int, int] = {}
+    for i, e in enumerate(edges):
+        if e.dir in [PathDir.Up, PathDir.Down]:
+            assert e.start_x == e.end_x
+            x_list_top_y[i] = min([e.start_y, e.end_y])
+
+    rects = []
+
+    def x_insert(i: int):
+        x_list.append(i)
+
+    def x_delete(i: int):
+        x_list.remove(i)
+
+    def x_extract(h: IslandEdge):
+        assert h.start_y == h.end_y
+        h_left_x = min([h.start_x, h.end_x])
+        h_right_x = max([h.start_x, h.end_x])
+        left_i: int = None
+        right_i: int = None
+        left: IslandEdge = None
+        right: IslandEdge = None
+        for xi in x_list:
+            xv = edges[xi]
+            xt = x_list_top_y[xi]
+            if xt < h.start_y:
+                assert xv.start_x == xv.end_x
+                if xv.start_x <= h_left_x and (not (left != None and xv.start_x <= left.start_x)):
+                    left_i = xi
+                    left = xv
+                elif xv.start_x >= h_right_x and (not (right != None and xv.start_x >= right.start_x)):
+                    right_i = xi
+                    right = xv
+        assert left == None or left.dir == PathDir.Up
+        assert right == None or right.dir == PathDir.Down
+
+        if h.dir == PathDir.Right:
+            assert left != None or right != None
+            if left != None:
+                rects.append(Rect(
+                    left.start_x,
+                    x_list_top_y[left_i],
+                    h.start_x - left.start_x,
+                    h.start_y - x_list_top_y[left_i],
+                    color,
+                ))
+
+            if right != None:
+                rects.append(Rect(
+                    h.end_x,
+                    x_list_top_y[right_i],
+                    right.start_x - h.end_x,
+                    h.end_y - x_list_top_y[right_i],
+                    color,
+                ))
+        elif h.dir == PathDir.Left:
+            assert left != None and right != None
+            rects.append(Rect(
+                left.start_x,
+                x_list_top_y[right_i],
+                right.start_x - left.start_x,
+                h.end_y - x_list_top_y[left_i],
+                color,
+            ))
+        else:
+            assert False
+
+        x_list_top_y[left_i] = h.start_y
+        x_list_top_y[right_i] = h.start_y
+
+    for hi in y_list:
+        H = edges[hi]
+        # Edges is closed loop.
+        before_index = hi-1
+        after_index = (hi+1) % len(edges)
+
+        before = edges[before_index]
+        after = edges[after_index]
+
+        from_to_dir = (before.dir, after.dir)
+        if H.dir == PathDir.Right:
+            A = before
+            B = after
+            A_index = before_index
+            B_index = after_index
+            if from_to_dir == (PathDir.Up, PathDir.Down):
+                # 1)
+                x_insert(A_index)
+                x_insert(B_index)
+            elif from_to_dir == (PathDir.Down, PathDir.Up):
+                # 3)
+                x_delete(A_index)
+                x_delete(B_index)
+                x_extract(H)
+            elif from_to_dir == (PathDir.Down, PathDir.Down):
+                # 8)
+                x_insert(A_index)
+                x_delete(B_index)
+                x_extract(H)
+            elif from_to_dir == (PathDir.Up, PathDir.Up):
+                # 7)
+                x_insert(A_index)
+                x_delete(B_index)
+                x_extract(H)
+            else:
+                assert False  # Unnormalized path.
+        elif H.dir == PathDir.Left:
+            A = after
+            B = before
+            A_index = after_index
+            B_index = before_index
+            if from_to_dir == (PathDir.Up, PathDir.Down):
+                # 2)
+                x_insert(A_index)
+                x_insert(B_index)
+                x_extract(H)
+            elif from_to_dir == (PathDir.Down, PathDir.Up):
+                # 3)
+                x_extract(H)  # extract first
+                x_delete(A_index)
+                x_delete(B_index)
+            elif from_to_dir == (PathDir.Down, PathDir.Down):
+                # 5)
+                x_insert(A_index)
+                x_delete(B_index)
+                x_extract(H)
+            elif from_to_dir == (PathDir.Up, PathDir.Up):
+                # 6)
+                x_insert(A_index)
+                x_delete(B_index)
+                x_extract(H)
+            else:
+                assert False  # Unnormalized path.
+        else:
+            assert False  # Not horizontal edge.
+
+    assert len(x_list) == 0
+
+    return rects
+
+
 # DO NOT FORGET THAT PIL USES X DOWN AXIS
 def left_x_down_y_to_pil_axis(data):
     return np.transpose(data, (1, 0, 2))
@@ -336,6 +496,24 @@ def main3():
             f"Depth: {l}, Start: ({path.start_x}, {path.start_y}), Color: {color_hex}\n{pc}\n")
 
 
+def main4():
+    data = np.ones((3, 3, 3), dtype=np.uint8) * 255
+    data[0, 1] = (255, 0, 0)
+    data[1, 1] = (255, 0, 0)
+    data[1, 0] = (255, 0, 0)
+    data[2, 2] = (255, 0, 0)
+
+    ipd = island_to_paths(data, (1, 1), (255, 0, 0))
+    print(ipd.start_x)
+    print(ipd.start_y)
+    print(ipd.path)
+
+    npd = normalize_island_path_to_edges(ipd)
+    rects = split_into_rect(npd, (0, 0, 1))
+    for r in rects:
+        print(f"{r.x},{r.y},{r.w},{r.h}")
+
+
 if __name__ == "__main__":
     print("start main")
-    main3()
+    main4()
